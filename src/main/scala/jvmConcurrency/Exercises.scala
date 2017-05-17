@@ -1,6 +1,7 @@
 package jvmConcurrency
 
 import scala.collection.mutable
+import scala.util.Random
 
 
 /**
@@ -93,7 +94,7 @@ object Exercises extends App{
         while (sv1.isEmpty()) sv1.wait()
         val msg = sv1.get()
         sv1.notify()
-        println(s"VALUE RECEIVED: $msg")
+        log(s"VALUE RECEIVED: $msg")
         finished = msg == -1
       }
     }
@@ -117,13 +118,13 @@ object Exercises extends App{
   /**
     * 5 cont) reimplement the consumer and producer to use the waiting approach
     */
-  println("5) Now using the wait methods ...")
+  log("5) Now using the wait methods ...")
 
   val consumer1 = thread {
     var finished = false
     while(!finished){
       val msg = sv1.getWait()
-      println(s"VALUE RECEIVED: $msg")
+      log(s"VALUE RECEIVED: $msg")
       finished = msg == -1
     }
   }
@@ -185,7 +186,7 @@ object Exercises extends App{
 
   //Testing new class
 
-  println("6 cont) Testing queue ...")
+  log("6 cont) Testing queue ...")
 
   val sq: SyncQueue[Int] = new SyncQueue[Int](2)
 
@@ -193,7 +194,7 @@ object Exercises extends App{
     var finished = false
     while(!finished){
       val msg = sq.getWait()
-      println(s"VALUE RECEIVED: $msg")
+      log(s"VALUE RECEIVED: $msg")
       finished = msg == -1
     }
   }
@@ -254,7 +255,7 @@ object Exercises extends App{
     def shutdown() = for(w<- workers)w.shutdown()
   }
 
-  println("Testing exercise 8, 9 and 10")
+  log("Testing exercise 8, 9 and 10")
   val pool = new PriorityTaskPool(3)
   pool.asynchronous(2) {log("Hello"); Thread.sleep(200)}
   for(_ <- 0 until 10) pool.asynchronous(2) {log("world!"); Thread.sleep(200)}
@@ -263,6 +264,9 @@ object Exercises extends App{
   pool.shutdown()
 
 
+  /**
+    * Exercises 11, 12, 13
+    */
   class ConcurrentBiMap[K, V] {
     var mapStraight: mutable.Map[K,V] = mutable.Map()
     var mapReverse: mutable.Map[V,K] = mutable.Map()
@@ -291,21 +295,59 @@ object Exercises extends App{
         case None => None
       }
     }
-    def removeValue(v:V): Option[K]= reserve{
-      val res1 = mapReverse.remove(v)
-      res1 match {
-        case Some(r1) =>
-          val res2 = mapStraight.remove(r1)
-          res2 match {
-            case Some(_) => res1
-            case None => None
-          }
+    def removeValue(v:V): Option[K]= getKey(v) match {
+      case None => None
+      case Some(k) => removeKey(k) match {
         case None => None
+        case Some(v) => Some(k)
       }
     }
-    def getValue(k:K): Option[V]= ???
-    def getKey(v:V): Option[K]= ???
-    def size: Int = ???
+    def getValue(k:K): Option[V]= mapStraight.synchronized{
+      mapStraight.get(k)
+    }
+    def getKey(v:V): Option[K]= mapReverse.synchronized{
+      mapReverse.get(v)
+    }
+    def size: Int = mapStraight.synchronized(mapStraight.size)
     def iterator: Iterator[(K, V)]= ???
+
+    def replace(k1: K, v1: V, k2: K, v2: V): Unit = {
+      removeKey(k1)
+      put(k2, v2)
+    }
+  }
+
+  val m = new ConcurrentBiMap[Int, Int]()
+  for (i <- 0 to 5 ) thread { for(i <- 0 to 1000000) m.put(Random.nextInt(1000000), Random.nextInt(1000000))}
+  for (i <- 0 to 5 ) thread { for(i <- 0 to 1000000) m.removeKey(Random.nextInt(1000000))}
+  for (i <- 0 to 5 ) thread { for(i <- 0 to 1000000) m.removeValue(Random.nextInt(1000000))}
+  thread { for (i <- 0 to 5) {
+      log(m.size + "")
+      Thread.sleep(1000)
+    }
+  }
+
+  /**
+    * 14) Cache
+    */
+
+  def cache[K, V](f: K => V): K => V = {
+    var innerCache: mutable.Map[K,V] = mutable.Map()
+
+    (k: K) => {
+      var check: Option[V] = None
+      innerCache.synchronized{
+        check = innerCache.get(k)
+      }
+      check match {
+        case Some(x) => x
+        case None =>
+          val comp = f(k)
+          innerCache.synchronized{
+            innerCache.put(k, comp)
+          }
+          comp
+      }
+    }
   }
 }
