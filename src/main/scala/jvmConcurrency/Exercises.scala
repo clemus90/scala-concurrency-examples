@@ -1,6 +1,5 @@
 package jvmConcurrency
 
-import scala.collection.mutable
 import scala.util.Random
 
 
